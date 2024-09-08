@@ -15,6 +15,7 @@
       pip
       requests
       tqdm
+      gpt4all-bindings
     ]);
 
     gpt4all-backend = pkgs.stdenv.mkDerivation {
@@ -27,33 +28,30 @@
       '';
     };
 
-    gpt4all-bindings = pythonpkg.pkgs.buildPythonPackage {
+    gpt4all-bindings = python_version.pkgs.buildPythonPackage {
       pname = "gpt4all-bindings";
       inherit (pkgs.gpt4all) src version;
       sourceRoot = "${pkgs.gpt4all.src.name}/gpt4all-bindings/python";
       pyproject = false;
-      
-      build-system = with pythonpkg.pkgs; [
+
+      build-system = with python_version.pkgs; [
         setuptools
         wheel
       ];
-
+      
       patchPhase = ''
         substituteInPlace setup.py \
           --replace-fail 'SRC_CLIB_DIRECTORY = ' 'SRC_CLIB_DIRECTORY = "${gpt4all-backend.src}/gpt4all-backend" #' \
           --replace-fail 'SRC_CLIB_BUILD_DIRECTORY = ' 'SRC_CLIB_BUILD_DIRECTORY = "${gpt4all-backend}/" #' \
           --replace-fail 'DEST_CLIB_BUILD_DIRECTORY = ' 'DEST_CLIB_BUILD_DIRECTORY = os.path.join(DEST_CLIB_DIRECTORY, "build") #' \
-          --replace-fail 'shutil.copy2' 'if "examples" in s: continue; print(s, "->", d); shutil.copy2'
-          # --replace-fail 'DEST_CLIB_DIRECTORY = ' 'DEST_CLIB_DIRECTORY = os.path.join("/build/libfiles") #' \
+          --replace-fail 'shutil.copy2' 'print("TOTO", s, "->", d)' \
+          --replace-fail '# copy over header' 'if "example" in s: continue #'
       '';
 
-      installPhase = ''
-        ls -lha gpt4all
-      '';
-
-      postInstall = ''
-        ls -lha $out
-        cp -r llmodel_DO_NOT_MODIFY $out/lib/python3.11/site-packages/gpt4all/llmodel_DO_NOT_MODIFY
+      buildPhase = ''
+        ls -lha
+        python3 setup.py build #--prefix=$out --root=$out
+        # cp -r llmodel_DO_NOT_MODIFY $out/lib/python3.11/site-packages/gpt4all/
       '';
     };
 

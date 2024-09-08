@@ -1,0 +1,40 @@
+diff --git a/setup.py b/setup.py
+index 35dca6e..f17f61d 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,6 +15,7 @@ LIB_NAME = "llmodel"
+ DEST_CLIB_DIRECTORY = os.path.join(package_name, f"{LIB_NAME}_DO_NOT_MODIFY")
+ DEST_CLIB_BUILD_DIRECTORY = os.path.join(DEST_CLIB_DIRECTORY, "build")
+ 
++print("Executing patched setup.py")
+ system = platform.system()
+ 
+ def get_c_shared_lib_extension():
+@@ -38,16 +39,27 @@ def copy_prebuilt_C_lib(src_dir, dest_dir, dest_build_dir):
+         os.mkdir(dest_build_dir)
+ 
+     for dirpath, _, filenames in os.walk(src_dir):
++        if "/example" in dirpath:
++            continue
++
++        if "/spm-headers" in dirpath:
++            continue
++
++        if "/src" in dirpath:
++            continue
++
+         for item in filenames:
+             # copy over header files to dest dir
+             s = os.path.join(dirpath, item)
+             if item.endswith(".h"):
+                 d = os.path.join(dest_dir, item)
++                print("Copying header", s, "to", d)
+                 shutil.copy2(s, d)
+                 files_copied += 1
+             if item.endswith(lib_ext) or item.endswith('.metallib'):
+                 s = os.path.join(dirpath, item)
+                 d = os.path.join(dest_build_dir, item)
++                print("Copying metalib", s, "to", d)
+                 shutil.copy2(s, d)
+                 files_copied += 1
+     

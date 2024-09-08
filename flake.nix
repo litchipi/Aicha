@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.05"; #unstable";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -10,11 +10,9 @@
       config = { allowUnfree = true; };
     };
 
-    python_version = pkgs.python311;
+    python_version = pkgs.python312;
     pythonpkg = python_version.withPackages (p: with p; [
       pip
-      requests
-      tqdm
       gpt4all-bindings
     ]);
 
@@ -28,31 +26,41 @@
       '';
     };
 
-    gpt4all-bindings = python_version.pkgs.buildPythonPackage {
+    gpt4all-bindings = pythonpkg.pkgs.buildPythonPackage {
       pname = "gpt4all-bindings";
       inherit (pkgs.gpt4all) src version;
       sourceRoot = "${pkgs.gpt4all.src.name}/gpt4all-bindings/python";
       pyproject = false;
 
-      build-system = with python_version.pkgs; [
+      patches = [ ./setup_fixup.patch ];
+
+      propagatedBuildInputs = with pythonpkg.pkgs; [
+        requests
+        tqdm
+      ];
+
+      build-system = with pythonpkg.pkgs; [
         setuptools
         wheel
       ];
       
-      patchPhase = ''
+      postPatch = ''
         substituteInPlace setup.py \
-          --replace-fail 'SRC_CLIB_DIRECTORY = ' 'SRC_CLIB_DIRECTORY = "${gpt4all-backend.src}/gpt4all-backend" #' \
+          --replace-fail 'SRC_CLIB_DIRECTORY = ' 'SRC_CLIB_DIRECTORY = "${gpt4all-backend}" #' \
           --replace-fail 'SRC_CLIB_BUILD_DIRECTORY = ' 'SRC_CLIB_BUILD_DIRECTORY = "${gpt4all-backend}/" #' \
-          --replace-fail 'DEST_CLIB_BUILD_DIRECTORY = ' 'DEST_CLIB_BUILD_DIRECTORY = os.path.join(DEST_CLIB_DIRECTORY, "build") #' \
-          --replace-fail 'shutil.copy2' 'print("TOTO", s, "->", d)' \
-          --replace-fail '# copy over header' 'if "example" in s: continue #'
+          --replace-fail 'DEST_CLIB_BUILD_DIRECTORY = ' 'DEST_CLIB_BUILD_DIRECTORY = os.path.join(DEST_CLIB_DIRECTORY, "build") #'
       '';
 
       buildPhase = ''
-        ls -lha
-        python3 setup.py build #--prefix=$out --root=$out
-        # cp -r llmodel_DO_NOT_MODIFY $out/lib/python3.11/site-packages/gpt4all/
+        python3 setup.py build
       '';
+
+      installPhase = ''
+        mkdir -p $out/${pythonpkg.sitePackages}/
+        cp -r gpt4all $out/${pythonpkg.sitePackages}/gpt4all
+      '';
+
+      pythonImportsCheck = ["gpt4all"];
     };
 
     name = "my_script";

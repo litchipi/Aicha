@@ -18,6 +18,22 @@
         "type": "github"
       }
     },
+    "fork": {
+      "locked": {
+        "lastModified": 1725871146,
+        "narHash": "sha256-sU8guubkQWWboxkSDmmd3vg0Yc5uFEzwSODmiBivdLw=",
+        "owner": "litchipi",
+        "repo": "nixpkgs",
+        "rev": "1ff6989d5c81d051a2196bb7dd46f729a75c985f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "litchipi",
+        "ref": "gpt4all-bindings",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1725634671,
@@ -37,6 +53,7 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "fork": "fork",
         "nixpkgs": "nixpkgs"
       }
     },

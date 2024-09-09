@@ -28,6 +28,13 @@ class Chat(GPT4All):
     The answers are using lists and paragraphs to organise the content in a readable way.
     """
     def __init__(self, model, model_dir=".model", chat_dir=".chat"):
+        if model not in SUPPORTED_MODELS:
+            print("Model not supported")
+            print("Supported models are:")
+            for mod in SUPPORTED_MODELS:
+                print(f"- {mod}")
+            sys.exit(1)
+
         self.msg_system("Loading model", model.capitalize())
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
@@ -146,8 +153,12 @@ class Chat(GPT4All):
         return filename
 
 if __name__ == "__main__":
-    bot = Chat("hermes",
-        model_dir=os.path.abspath(sys.argv[1]),
-        chat_dir=os.path.abspath(sys.argv[2]),
+    if len(sys.argv) < 4:
+        print("Usage: aicha <model> <model_dir> <chat_dir>")
+        sys.exit(1)
+
+    bot = Chat(sys.argv[1],
+        model_dir=os.path.abspath(sys.argv[2]),
+        chat_dir=os.path.abspath(sys.argv[3]),
     )
     bot.run()

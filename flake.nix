@@ -15,6 +15,7 @@
         python312Packages = forkpkgs.python312Packages;
       })];
     };
+
     package = pkgs.callPackage ./package.nix {
       inherit pkgs;
       python = pkgs.python312;
@@ -22,6 +23,8 @@
 
   in {
     packages.default = package;
+    # TODO Enable and test once PR 340717 is merged
+    # nixosModules.default = import ./module.nix;
     apps.default = { type = "app"; program = "${package}/bin/aicha"; };
     devShells.default = pkgs.mkShell package;
   });

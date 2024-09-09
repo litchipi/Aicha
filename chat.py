@@ -4,9 +4,6 @@ import time
 import os
 from gpt4all import GPT4All
 
-DEFAULT_MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".model")
-DEFAULT_CHAT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".chat")
-
 SUPPORTED_MODELS = {
     "hermes": "Nous-Hermes-2-Mistral-7B-DPO.Q4_0.gguf",
     "llama": "Meta-Llama-3-8B-Instruct.Q4_0.gguf",
@@ -28,7 +25,7 @@ class Chat(GPT4All):
 
     SYSTEM_PROMPT = """
     """
-    def __init__(self, model, model_dir=DEFAULT_MODEL_DIR, chat_dir=DEFAULT_CHAT_DIR):
+    def __init__(self, model, model_dir=".model", chat_dir=".chat"):
         self.msg_system("Loading model", model.capitalize())
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
@@ -106,6 +103,9 @@ class Chat(GPT4All):
 
             self.ask(question)
 
+        if len(self._history) == 1:    # No more than the first system prompt
+            return
+
         self.msg_system("Generating a filename for this conversation")
         filename = self.generate_filename()
         self.msg_system(f"Saving under filename {filename}")
@@ -139,5 +139,9 @@ class Chat(GPT4All):
             ntry += 1
         return filename
 
-bot = Chat("hermes")
-bot.run()
+if __name__ == "__main__":
+    bot = Chat("hermes",
+        model_dir=os.path.abspath(sys.argv[1]),
+        chat_dir=os.path.abspath(sys.argv[2]),
+    )
+    bot.run()

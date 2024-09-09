@@ -15,33 +15,16 @@
       })];
     };
 
-    python_version = pkgs.python312;
-    pythonpkg = python_version.withPackages (p: with p; [ gpt4all-bindings ]);
-    deps = [ pythonpkg ];
-
-    name = "chat";
-    start = pkgs.writeShellApplication {
-      inherit name;
-      runtimeInputs = deps;
-      text = ''
-        export PYTHONPATH="${pythonpkg}/${pythonpkg.sitePackages}"
-        export LD_LIBRARY_PATH=${pkgs.gpt4all}/lib:$LD_LIBRARY_PATH
-        ${pythonpkg}/bin/python -W ignore ./chat.py
-      '';
+    package = import ./package.nix {
+      inherit pkgs;
+      python = pkgs.python312;
+      chat_dir = "/tmp/aicha/chat_history";
+      model_dir = "/tmp/aicha/model";
     };
+
   in {
-    packages.default = start;
-    apps = {
-      default = {
-        type = "app";
-        program = "${start}/bin/${name}";
-      };
-    };
-
-    devShells.default = pkgs.mkShell {
-      buildInputs = deps;
-      PYTHONPATH = "${pythonpkg}/${pythonpkg.sitePackages}:$PYTHONPATH";
-      LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:/run/opengl-driver/lib$LD_LIBRARY_PATH";
-    };
+    packages.default = package;
+    apps.default = { type = "app"; program = "${package}/bin/aicha"; };
+    devShells.default = pkgs.mkShell package;
   });
 }

@@ -19,8 +19,6 @@
     package = import ./package.nix {
       inherit pkgs;
       python = pkgs.python312;
-      chat_dir = "/tmp/aicha/chat_history";
-      model_dir = "/tmp/aicha/model";
     };
 
   in {

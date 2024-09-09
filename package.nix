@@ -1,4 +1,4 @@
-{ pkgs, python, model_dir, chat_dir }: let
+{ pkgs, python, model_dir ? ".model", chat_dir ? ".chat" }: let
   pythonpkg = python.withPackages (p: with p; [ gpt4all-bindings ]);
 in pkgs.writeShellApplication {
   name = "aicha";

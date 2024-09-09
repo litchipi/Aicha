@@ -13,25 +13,18 @@
         python312 = forkpkgs.python312;
         python312Packages = forkpkgs.python312Packages;
       })];
-      config = { allowUnfree = true; };
     };
 
     python_version = pkgs.python312;
-    pythonpkg = python_version.withPackages (p: with p; [
-      pip
-      gpt4all-bindings
-    ]);
+    pythonpkg = python_version.withPackages (p: with p; [ gpt4all-bindings ]);
+    deps = [ pythonpkg ];
 
-    name = "my_script";
-    deps = [
-      pythonpkg
-    ];
-
+    name = "chat";
     start = pkgs.writeShellApplication {
       inherit name;
       runtimeInputs = deps;
       text = ''
-        export PYTHONPATH="${pythonpkg}/${pythonpkg.sitePackages}";
+        export PYTHONPATH="${pythonpkg}/${pythonpkg.sitePackages}"
         export LD_LIBRARY_PATH=${pkgs.gpt4all}/lib:$LD_LIBRARY_PATH
         ${pythonpkg}/bin/python -W ignore ./chat.py
       '';

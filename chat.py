@@ -24,6 +24,8 @@ class Chat(GPT4All):
     FILENAME_GENERATION_PROMPT = "Create a short filename for this conversation, using key words representing what the user was asking. Output the filename in valid JSON using the key \"conversation_filename\", only output JSON data."
 
     SYSTEM_PROMPT = """
+    You are a useful AI made to empower the user with knowledge from the Internet. Your answers are clear, concise, precise, does not contain any superfluous text.
+    The answers are using lists and paragraphs to organise the content in a readable way.
     """
     def __init__(self, model, model_dir=".model", chat_dir=".chat"):
         self.msg_system("Loading model", model.capitalize())
@@ -63,8 +65,8 @@ class Chat(GPT4All):
     
     def ask(self, question, **kwargs):
         config = dict(
-            max_tokens=4096,
-            temp = 0.7,
+            max_tokens=409600,
+            temp = 0.85,
             top_k = 40,
             top_p = 0.4,
             repeat_penalty = 1.18,
@@ -124,7 +126,11 @@ class Chat(GPT4All):
         ntry = 0
         while ntry < 5:
             try:
-                data = self.generate(self.FILENAME_GENERATION_PROMPT, max_tokens=64)
+                data = self.generate(
+                    self.FILENAME_GENERATION_PROMPT,
+                    max_tokens=64,
+                    temp = 0.35,
+                )
             except KeyboardInterrupt:
                 break
 

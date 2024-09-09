@@ -1,9 +1,5 @@
-# Effort for making a practical AI chatbot
+# Aicha
 
-Contribute to [nixpkgs#306217](https://github.com/NixOS/nixpkgs/issues/306217) the gpt4all bindings to Python
+AI Chatbot, very simplistic, using Python, GPT4all bindings, local models only.
 
-Build a Python REPL with the library to simply have a conversation with the AI
-
-Make advanced features, like:
-- Model auto-download
-- Save histories somewhere, with filenname based on the conversation content
+For my own usage only, but feel free to grab it, and contribute if you feel like it

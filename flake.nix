@@ -15,8 +15,7 @@
         python312Packages = forkpkgs.python312Packages;
       })];
     };
-
-    package = import ./package.nix {
+    package = pkgs.callPackage ./package.nix {
       inherit pkgs;
       python = pkgs.python312;
     };

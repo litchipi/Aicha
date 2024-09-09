@@ -1,5 +1,6 @@
 {
   inputs = {
+    # TODO  Remove once PR https://github.com/NixOS/nixpkgs/pull/340717 is merged
     fork.url = "github:litchipi/nixpkgs/gpt4all-bindings";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";

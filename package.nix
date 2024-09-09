@@ -7,6 +7,6 @@ in pkgs.writeShellApplication {
   text = ''
     export PYTHONPATH="${pythonpkg}/${pythonpkg.sitePackages}"
     export LD_LIBRARY_PATH=${pkgs.gpt4all}/lib:$LD_LIBRARY_PATH
-    ${pythonpkg}/bin/python -W ignore ${./chat.py} ${model_dir} ${chat_dir}
+    ${pythonpkg}/bin/python -W ignore ${./aicha.py} ${model_dir} ${chat_dir}
   '';
 }

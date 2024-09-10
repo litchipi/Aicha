@@ -160,6 +160,13 @@ class Chat(GPT4All):
             ntry += 1
         return filename
 
+# TODO    Add a command for RAG:
+#    - Analysis of a folder containing data files (depending on supported filenames)
+#        Iterate through list of files, shasum of filenames & contents
+#        Analyse all the files, save the result with shasum (so skip is result already there)
+#    - Use analysis of a folder as a DB for RAG
+#    - Insert content of database in prompt to generate answer
+
 if __name__ == "__main__":
     if len(sys.argv) < 4:
         print("Usage: aicha <model> <model_dir> <chat_dir>")

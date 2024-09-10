@@ -67,6 +67,9 @@ class Chat(GPT4All):
         except KeyboardInterrupt:
             self.msg_system("Interrupted")
             return False
+        except:
+            self.msg_system("Interrupted")
+            return False
 
         return self.continue_token_generation
     
@@ -136,7 +139,7 @@ class Chat(GPT4All):
                 data = self.generate(
                     self.FILENAME_GENERATION_PROMPT,
                     max_tokens=64,
-                    temp = 0.35,
+                    temp = 0.60,
                 )
             except KeyboardInterrupt:
                 break

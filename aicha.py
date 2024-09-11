@@ -44,6 +44,7 @@ class Chat(GPT4All):
             model_path = self.model_dir,
             allow_download = True,
             n_threads = 16,
+            n_ctx = 1 << 15,
         )
 
         os.makedirs(chat_dir, exist_ok=True)

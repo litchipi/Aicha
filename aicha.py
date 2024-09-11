@@ -103,12 +103,16 @@ class Chat(GPT4All):
     def run(self):
         while True:
             try:
-                question = input(color(128, 255, 200) + "> ")
+                question = input(color(128, 255, 200) + "> ").strip()
                 print(reset(), end="")
             except KeyboardInterrupt:
                 self.msg_system("Stopping\n")
                 break
 
+            if len(question) == 0:
+                continue
+
+            # TODO    Have a handler for different kind of commands
             if question == "/quit":
                 self.msg_system("Stopping\n")
                 break

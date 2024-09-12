@@ -50,12 +50,14 @@ def get_embeddings(*data):
 
 # TODO    Do not break in the middle of a word
 def load_text_file(f, sz):
+    nline = 1
     with open(f, "r") as f:
         while True:
             data = f.read(sz)
             if not data:
                 break
-            yield data
+            nline += data.count("\n")
+            yield (f"line {nline}", data)
 
 def load_pdf_file(f, sz):
     texts = list()
@@ -66,6 +68,7 @@ def load_pdf_file(f, sz):
     device = TextConverter(rsrcmgr, output_string, laparams=LAParams())
     interpreter = PDFPageInterpreter(rsrcmgr, device)
 
+    npage = 1
     with open(f, "rb") as in_file:
         parser = PDFParser(in_file)
         doc = PDFDocument(parser)
@@ -91,7 +94,8 @@ def load_pdf_file(f, sz):
                 if len(rest) > 0:
                     texts.append(rest)
 
-                yield got
+                yield (f"page {npage}", got)
+                npage += 1
                 text = " ".join(texts).strip()
         yield " ".join(texts).strip()
 
@@ -105,11 +109,10 @@ FILETYPE_HANDLERS = {
 }
 
 class KnowledgeLibrary:
-    def __init__(self, db_dir, dirpath):
-        ## Saved to db_file
+    def __init__(self, db_dir, dirpath, fpath_filter=""):
+        self.fpath_filter = fpath_filter.lower()
         self.chunk_size = 512
         self.database = dict()
-        ###
 
         self.db_dir = os.path.abspath(db_dir)
         self.cache_dir = os.path.join(self.db_dir, "cache")
@@ -117,21 +120,8 @@ class KnowledgeLibrary:
         os.makedirs(self.db_dir, exist_ok=True)
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        db_file = os.path.join(self.db_dir, "database.gz")
-        if os.path.isfile(db_file):
-            print(f"[*] Loading database from file {db_file}")
-            data = load_data(db_file)
-            self.database = data["database"]
-            self.chunk_size = data["chunk_size"]
-
         print(f"[*] Building database from directory {dirpath}")
         self.build_db(dirpath)
-
-        print(f"[*] Saving database to file {db_file}")
-        save_data({
-            "database": self.database,
-            "chunk_size": self.chunk_size,
-        }, db_file)
 
     def compute_dirpath_hash(self, dirpath):
         hasher = hashlib.sha256()
@@ -144,6 +134,9 @@ class KnowledgeLibrary:
     def build_db(self, dirpath):
         for (root, _, files) in os.walk(dirpath):
             for f in files:
+                if self.fpath_filter not in f.lower():
+                    continue
+
                 if not self.readable_file(f):
                     continue
 
@@ -155,11 +148,7 @@ class KnowledgeLibrary:
 
     # TODO    Get the size of the file, then display a progress bar
     #    based on the number of chunks x chunk_size (will not be correct but still)
-    def add_file_to_db(self, fpath, max_chunks_process=80):
-        nchunks = 0
-        chunks = list()
-        generator = FILETYPE_HANDLERS[fpath.split(".")[-1]](fpath, self.chunk_size)
-
+    def add_file_to_db(self, fpath, max_chunks_process=40):
         dbkey = os.path.relpath(fpath, self.data_dir)
         file_hash = compute_file_hash(fpath)
 
@@ -172,52 +161,52 @@ class KnowledgeLibrary:
             "index": list(),
         }
 
+        cache_file = os.path.join(self.db_dir, "cache", file_hash + ".gz")
+        if os.path.isfile(cache_file):
+            cache_data = load_data(cache_file)
+            if "database" in cache_data.keys():
+                cache_data["vectors"] = cache_data["database"]
+                del cache_data["database"]
+                save_data(cache_data, cache_file)
+
+            if cache_data["file_hash"] == file_hash:
+                cache_fname = os.path.relpath(cache_file, self.cache_dir)
+                print(f" - Loading file {fpath} from cache file {cache_fname}")
+                for (n, chunk) in enumerate(cache_data["vectors"]):
+                    self.database[dbkey]["vectors"].append(chunk)
+                    self.database[dbkey]["index"].append(cache_data["index"][n])
+                return
+
         cache_data = {
             "file_hash": file_hash,
-            "nb_chunks": 0,
             "vectors": list(),
             "index": list(),
             "path": fpath,
         }
 
-        cache_file = os.path.join(self.db_dir, "cache", cache_data["file_hash"] + ".gz")
-        if os.path.isfile(cache_file):
-            data = load_data(cache_file)
-            if "database" in data.keys():
-                data["vectors"] = data["database"]
-                del data["database"]
-                save_data(data, cache_file)
-
-            if data["file_hash"] == cache_data["file_hash"]:
-                cache_fname = os.path.relpath(cache_file, self.cache_dir)
-                print(f" - Loading file {fpath} from cache file {cache_fname}")
-                for (n, d) in enumerate(data["vectors"]):
-                    self.database[dbkey]["vectors"].append(d)
-                    # TODO    Get a refernence (line, page, etc... from extractor)
-                    # self.database[dbkey]["index"].append(n)
-                return
-
         print(f" - Processing file {fpath}")
+        chunks = list()
+        refs = list()
+        generator = FILETYPE_HANDLERS[fpath.split(".")[-1]](fpath, self.chunk_size)
         while True:
             try:
-                chunk = next(generator)
+                (ref, chunk) = next(generator)
             except StopIteration:
                 break
 
             if len(chunk) == 0:
                 continue
 
+            refs.append(ref)
             chunks.append(chunk.lower())
             if len(chunks) >= max_chunks_process:
                 for (n, data) in enumerate(get_embeddings(*chunks)):
                     self.database[dbkey]["vectors"].append(data)
                     cache_data["vectors"].append(data)
-                    # TODO    Get a refernence (line, page, etc... from extractor)
-                    # self.database[dbkey]["index"].append(n)
-
-                nchunks += len(chunks)
+                    self.database[dbkey]["index"].append(refs[n])
+                    cache_data["index"].append(ref)
                 chunks = list()
-        cache_data["nb_chunks"] = nchunks
+                refs = list()
 
         save_data(cache_data, cache_file)
 
@@ -263,15 +252,16 @@ class KnowledgeLibrary:
         return chunks
 
 if __name__ == "__main__":
-    library = KnowledgeLibrary(".rag", ".rag/data") # TODO    Get from sys.argv
+    # TODO    Get from sys.argv
+    library = KnowledgeLibrary(".rag", ".rag/data", fpath_filter="cryptography")
 
-    print("Question 1:")
-    got = library.query_db("Explain me the different AI algorithms that can be used for natural language processing (NLP)")
-    for chunk in got:
-        print(chunk)
-    input("")
+    # print("Question 1:")
+    # got = library.query_db("Explain me the different AI algorithms that can be used for natural language processing (NLP)")
+    # for chunk in got:
+    #     print(chunk)
+    # input("")
 
-    print("Question 2:")
+    print("Question Cryptography:")
     got = library.query_db("Tell me about the RSA algorithm, how it works, and its advantages")
     for chunk in got:
         print(chunk)

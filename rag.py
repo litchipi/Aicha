@@ -103,11 +103,6 @@ FILETYPE_HANDLERS = {
 class KnowledgeLibrary:
     # TODO    Kwargs from argparse
     def __init__(self, db_dir, dirpath, model_dir, njobs=1, fpath_filter=""):
-        self.embed4all = Embed4All(
-            model_name="nomic-embed-text-v1.5.f16.gguf",
-            model_path=model_dir,
-            n_threads=njobs,
-        )
         self.fpath_filter = fpath_filter.lower()
         self.chunk_size = 512
         self.database = dict()
@@ -117,6 +112,13 @@ class KnowledgeLibrary:
         self.data_dir = dirpath
         os.makedirs(self.db_dir, exist_ok=True)
         os.makedirs(self.cache_dir, exist_ok=True)
+        os.makedirs(model_dir, exist_ok=True)
+
+        self.embed4all = Embed4All(
+            model_name="nomic-embed-text-v1.5.f16.gguf",
+            model_path=model_dir,
+            n_threads=njobs,
+        )
 
         print(f"[*] Building database from directory {dirpath}")
         self.build_db(dirpath)

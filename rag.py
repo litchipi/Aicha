@@ -3,10 +3,10 @@ import sys
 import gzip
 import json
 import time
-from nomic import embed
 from sklearn.metrics.pairwise import euclidean_distances
 import numpy as np
 import hashlib
+from gpt4all import Embed4All
 
 from io import StringIO
 
@@ -39,14 +39,6 @@ def compute_file_hash(fpath):
 
             hasher.update(data)
         return hasher.hexdigest()
-
-def get_embeddings(*data):
-    return embed.text(
-        list(data),
-        inference_mode="local",
-        model="nomic-embed-text-v1.5",
-        model_path=".model",
-    )['embeddings']
 
 # TODO    Do not break in the middle of a word
 def load_text_file(f, sz):
@@ -109,7 +101,13 @@ FILETYPE_HANDLERS = {
 }
 
 class KnowledgeLibrary:
-    def __init__(self, db_dir, dirpath, fpath_filter=""):
+    # TODO    Kwargs from argparse
+    def __init__(self, db_dir, dirpath, model_dir, njobs=1, fpath_filter=""):
+        self.embed4all = Embed4All(
+            model_name="nomic-embed-text-v1.5.f16.gguf",
+            model_path=model_dir,
+            n_threads=njobs,
+        )
         self.fpath_filter = fpath_filter.lower()
         self.chunk_size = 512
         self.database = dict()
@@ -130,7 +128,6 @@ class KnowledgeLibrary:
                 hasher.update(os.path.relpath(self.db_dir, os.path.join(root, f)).encode())
         return hasher.digest().hex()
 
-    # TODO    Have this paralellized
     def build_db(self, dirpath):
         for (root, _, files) in os.walk(dirpath):
             for f in files:
@@ -200,11 +197,18 @@ class KnowledgeLibrary:
             refs.append(ref)
             chunks.append(chunk.lower())
             if len(chunks) >= max_chunks_process:
-                for (n, data) in enumerate(get_embeddings(*chunks)):
+                tstart = time.time()
+                for (n, data) in enumerate(self.embed4all.embed(chunks)):
                     self.database[dbkey]["vectors"].append(data)
                     cache_data["vectors"].append(data)
                     self.database[dbkey]["index"].append(refs[n])
                     cache_data["index"].append(ref)
+                dur = time.time() - tstart
+                print("{} sec/chunk\t {} bytes/second\t {} seconds in total".format(
+                    round(dur / len(chunks), 3),
+                    round(sum([len(c) for c in chunks]) / dur),
+                    dur,
+                ))
                 chunks = list()
                 refs = list()
 
@@ -222,7 +226,7 @@ class KnowledgeLibrary:
                 all_vectors.append(vec)
                 all_indexes.append((key, n))
 
-        query_vector = get_embeddings(query)
+        query_vector = self.embed4all.embed(query)
         distances = sorted([
             (n, dist)
             for (n, dist) in enumerate(euclidean_distances(query_vector, all_vectors)[0])
@@ -252,8 +256,7 @@ class KnowledgeLibrary:
         return chunks
 
 if __name__ == "__main__":
-    # TODO    Get from sys.argv
-    library = KnowledgeLibrary(".rag", ".rag/data", fpath_filter="cryptography")
+    library = KnowledgeLibrary(".rag", ".rag/data", ".model", njobs=16, fpath_filter="cryptography")
 
     # print("Question 1:")
     # got = library.query_db("Explain me the different AI algorithms that can be used for natural language processing (NLP)")

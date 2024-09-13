@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
+#-*-encoding:utf-8*-
+
+import os
 import sys
 import json
 import time
-import os
 from gpt4all import GPT4All
 
+from interface import set_ai_color, set_user_color, reset_style, msg_system, set_verbosity
 from rag import KnowledgeLibrary
 
 SUPPORTED_MODELS = {
@@ -11,25 +15,21 @@ SUPPORTED_MODELS = {
     "llama": "Meta-Llama-3-8B-Instruct.Q4_0.gguf",
 }
 
-def disp_color(r, g, b, *msg, **kwargs):
-    print(color(r, g, b), end="")
-    print(*msg, **kwargs)
-    print("\033[0m", end="")
-
-def color(r, g, b):
-    return f"\033[38;2;{r};{g};{b}m"
-
-def reset():
-    return "\033[0m"
-
-class Chat(GPT4All):
+class Aicha(GPT4All):
     FILENAME_GENERATION_PROMPT = "Create a short filename for this conversation, using key words representing what the user was asking. Output the filename in valid JSON using the key \"conversation_filename\", only output JSON data."
 
     SYSTEM_PROMPT = """
     You are a useful AI made to empower the user with knowledge from the Internet. Your answers are clear, concise, precise, does not contain any superfluous text.
     The answers are using lists and paragraphs to organise the content in a readable way.
     """
-    def __init__(self, model, model_dir=".model", chat_dir=".chat"):
+    def __init__(self,
+             model,
+             model_dir,
+             chat_dir,
+             rag,
+             rag_nb_qry=10,
+             rag_threshold=0.87,
+         ):
         if model not in SUPPORTED_MODELS:
             print("Model not supported")
             print("Supported models are:")
@@ -37,7 +37,13 @@ class Chat(GPT4All):
                 print(f"- {mod}")
             sys.exit(1)
 
-        self.msg_system("Loading model", model.capitalize())
+        self.rag = rag
+        self.rag_config = dict(
+            nmax=rag_nb_qry,
+            threshold=rag_threshold,
+        )
+
+        msg_system("Loading model", model.capitalize())
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
 
@@ -51,14 +57,15 @@ class Chat(GPT4All):
 
         os.makedirs(chat_dir, exist_ok=True)
         self.chat_dir = chat_dir
-        self._history = [{"role": "system", "content": self.SYSTEM_PROMPT}]
+        if self.rag:
+            system_prompt = self.SYSTEM_PROMPT + """
+            The user will provide all the available data it has on the matter, and you have to formulate an answer based on this.
+            At the end of your answer, you will give the references of the provided data you used to build your answer
+            """
+        else:
+            system_prompt = self.SYSTEM_PROMPT
+        self._history = [{"role": "system", "content": system_prompt}]
         self._current_prompt_template = self.config["promptTemplate"]
-
-    def msg_system(self, *msg):
-        disp_color(128, 128, 128, *msg)
-
-    def msg_ai(self, *msg):
-        disp_color(255, 128, 200, *msg)
 
     def token_callback(self, id, token):
         try:
@@ -68,15 +75,23 @@ class Chat(GPT4All):
                 sys.stdout.write(token)
                 sys.stdout.flush()
         except KeyboardInterrupt:
-            self.msg_system("Interrupted")
+            msg_system("Interrupted")
             return False
         except:
-            self.msg_system("Interrupted")
+            msg_system("Interrupted")
             return False
 
         return self.continue_token_generation
     
     def ask(self, question, **kwargs):
+        if self.rag:
+            ressources = self.rag.query_db(question, **self.rag_config)
+            prompt = f"{question}\nAvailable data on the subject:\n"
+            for (reference, ressource) in ressources:
+                prompt += f"At the reference {reference}:\n{ressource}\n\n"
+        else:
+            prompt = question
+
         config = dict(
             max_tokens=409600,
             temp = 0.85,
@@ -92,42 +107,45 @@ class Chat(GPT4All):
         self.disp_tokens=True
         self.continue_token_generation = True
         try:
-            print(color(255, 128, 200), end="")
+            set_ai_color()
             response = self.generate(question, callback=self.token_callback, **config)
         except KeyboardInterrupt:
-            self.msg_system("Interrupt\n")
+            msg_system("Interrupt\n")
         finally:
-            print(reset(), end="")
+            reset_style()
             self.continue_token_generation = False
         print("")
         response = ''.join(self.response_buffer)
         return response
 
-    def run(self):
-        while True:
+    def conversation(self, **kwargs):
+        done = False
+        while not done:
             try:
-                question = input(color(128, 255, 200) + "> ").strip()
-                print(reset(), end="")
+                set_user_color()
+                question = input("> ").strip()
+                reset_style()
             except KeyboardInterrupt:
-                self.msg_system("Stopping\n")
+                msg_system("Stopping\n")
                 break
 
             if len(question) == 0:
                 continue
 
-            # TODO    Have a handler for different kind of commands
-            if question == "/quit":
-                self.msg_system("Stopping\n")
-                break
+            if question.startswith("/"):
+                done = self.dispatch_command(question[1:])
+                continue
 
-            self.ask(question)
+            self.ask(question, **kwargs)
 
         if len(self._history) == 1:    # No more than the first system prompt
             return
 
-        self.msg_system("Generating a filename for this conversation")
+        # TODO    Generate the filename with the first question asked only
+        #         Move the generation process to a totally different class with its model
+        msg_system("Generating a filename for this conversation")
         filename = self.generate_filename()
-        self.msg_system(f"Saving under filename {filename}")
+        msg_system(f"Saving under filename {filename}")
         with open(os.path.join(self.chat_dir, filename), "w") as f:
             for line in self.current_chat_session:
                 if line["role"] == "user":
@@ -136,6 +154,15 @@ class Chat(GPT4All):
                     f.write("USER> " + line["content"] + "\n\n")
                 elif line["role"] == "assistant":
                     f.write("AI> " + line["content"] + "\n\n")
+
+    def dispatch_command(self, cmd):
+        if cmd == "quit":
+            msg_system("Stopping\n")
+            return True
+        # TODO    Command to set the filename of the chat
+        # TODO    Command to ask for more creativity in the answer
+        # TODO    Command to regenerate a different answer
+        # TODO    Help command
 
     def generate_filename(self):
         self.disp_tokens = False
@@ -157,29 +184,81 @@ class Chat(GPT4All):
             except KeyboardInterrupt:
                 break
             except Exception as err:
-                self.msg_system(f"Invalid JSON generated: {err}")
+                msg_system(f"Invalid JSON generated: {err}")
 
             ntry += 1
         return filename
 
-# TODO    Add a command for RAG:
-#    - Analysis of a folder containing data files (depending on supported filenames)
-#        Iterate through list of files, shasum of filenames & contents
-#        Analyse all the files, save the result with shasum (so skip is result already there)
-#    - Use analysis of a folder as a DB for RAG
-#    - Insert content of database in prompt to generate answer
+def env_var_or_exit(var, code=1):
+    try:
+        return os.environ[var]
+    except KeyError:
+        print(f"Environment variable {var} not set")
+        sys.exit(code)
 
 def main():
-    # TODO    Clean CLI argparse
-    if len(sys.argv) < 4:
-        print("Usage: aicha <model> <model_dir> <chat_dir>")
-        sys.exit(1)
+    import argparse
+    import multiprocessing as mproc
 
-    bot = Chat(sys.argv[1],
-        model_dir=os.path.abspath(sys.argv[2]),
-        chat_dir=os.path.abspath(sys.argv[3]),
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--verbose", "-v", action="count", help="Turn on verbose output")
+    parser.add_argument("--rag", "-r", action="store_true", help="Enable the RAG knowledge retrieval")
+    parser.add_argument("--build-rag", action="store_true", help="Build the knowledgebase")
+    parser.add_argument("--nb-jobs", "-j",
+        type=int,
+        default=mproc.cpu_count(),
+        help="Number of threads to spawn for the inference",
     )
-    bot.run()
+    parser.add_argument("--filter", "-f", help="Filter the RAG documents to search from", default="")
+
+    parser.add_argument("--llm-temp", "-lt", help="Temperature of the LLM inference", default=0.85, type=float)
+    parser.add_argument("--llm-topk", "-lk", help="Top K parameter of the LLM inference", default=40, type=int)
+    parser.add_argument("--llm-topp", "-lp", help="Top P parameter of the LLM inference", default=0.4, type=float)
+    parser.add_argument("--llm-repeat-penalty", "-lr", help="Repeat penalty of the LLM inference", default=1.18, type=float)
+    parser.add_argument("--llm-repeat-last-n", "-lrn", help="Repeat last N parameter of the LLM inference", default=64, type=int)
+    parser.add_argument("question", nargs="*", help="Question to ask directly to Aicha")
+    args = parser.parse_args()
+    set_verbosity(args.verbose)
+
+    llm_cfg = dict(
+        temp=args.llm_temp,
+        top_k=args.llm_topk,
+        top_p = args.llm_topp,
+        repeat_penalty = args.llm_repeat_penalty,
+        repeat_last_n = args.llm_repeat_last_n,
+    )
+
+    model = env_var_or_exit("AICHA_MODEL")
+    model_dir = env_var_or_exit("AICHA_MODEL_DIR")
+    chathist_dir = env_var_or_exit("AICHA_CHATHIST_DIR")
+
+    if args.rag or args.build_rag:
+        rag_dir = env_var_or_exit("AICHA_RAG_KNOWLEDGE_CACHE_DIR")
+        rag_target = env_var_or_exit("AICHA_RAG_KNOWLEDGE_DIR")
+        rag = KnowledgeLibrary(
+            rag_dir,
+            rag_target,
+            model_dir,
+            njobs=args.nb_jobs,
+            fpath_filter=args.filter,
+            do_not_build=(not args.build_rag),
+        )
+        if args.build_rag:
+            sys.exit(0)            
+    else:
+        rag = None
+
+    aicha = Aicha(
+        model,
+        model_dir,
+        chathist_dir,
+        rag,
+    )
+
+    if len(args.question) > 0:
+        aicha.ask(" ".join(args.question), **llm_cfg)
+    else:
+        aicha.conversation(**llm_cfg)
 
 if __name__ == "__main__":
     main()

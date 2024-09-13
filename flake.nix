@@ -19,6 +19,8 @@
   in {
     packages.default = aicha;
     apps.default = inputs.flake-utils.lib.mkApp { drv = aicha; };
-    devShells.default = pkgs.mkShell aicha;
+    devShells.default = pkgs.mkShell {
+      buildInputs = aicha.dependencies ++ [ pkgs.python312Packages.flake8 ];
+    };
   });
 }

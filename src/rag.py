@@ -1,25 +1,30 @@
 import os
-import sys
-import json
-import time
-import numpy as np
+import hashlib
 from gpt4all import Embed4All
 from sklearn.metrics.pairwise import euclidean_distances
 
-from data import save_data, load_data, ensure_path_exist, compute_file_hash
-from handlers import read_text_chunks_from
+from filesystem import save_data, load_data, ensure_path_exist, compute_file_hash
+from handlers import read_text_chunks_from, readable_file
+from interface import msg_system
+
+CHUNK_SIZE=512
 
 class KnowledgeLibrary:
-    # TODO    Kwargs from argparse
-    def __init__(self, db_dir, dirpath, model_dir, njobs=1, fpath_filter=""):
-        self.fpath_filter = fpath_filter.lower()
-        self.chunk_size = 512
-        self.database = dict()
+    def __init__(self,
+             cache_dir,
+             dirpath,
+             model_dir,
+             njobs=1,
+             fpath_filter="",
+             do_not_build=False,
+         ):
 
-        self.db_dir = os.path.abspath(db_dir)
-        self.cache_dir = os.path.join(self.db_dir, "cache")
+        self.fpath_filter = fpath_filter.lower()
+        self.knowledge = dict()
+        self.do_not_build=do_not_build
+
+        self.cache_dir = os.path.abspath(cache_dir)
         self.data_dir = dirpath
-        ensure_path_exist(self.db_dir)
         ensure_path_exist(self.cache_dir)
         ensure_path_exist(model_dir)
 
@@ -30,17 +35,18 @@ class KnowledgeLibrary:
             n_threads=njobs,
         )
 
-        print(f"[*] Building database from directory {dirpath}")
+        msg_system(f"[*] Building knowledge from directory {dirpath}")
         self.build_db(dirpath)
 
     def compute_dirpath_hash(self, dirpath):
         hasher = hashlib.sha256()
         for (root, _, files) in os.walk(dirpath):
             for f in files:
-                hasher.update(os.path.relpath(self.db_dir, os.path.join(root, f)).encode())
+                hasher.update(os.path.relpath(self.data_dir, os.path.join(root, f)).encode())
         return hasher.digest().hex()
 
     def build_db(self, dirpath):
+        nb_files = 0
         for (root, _, files) in os.walk(dirpath):
             for f in files:
                 if self.fpath_filter not in f.lower():
@@ -49,54 +55,54 @@ class KnowledgeLibrary:
                 if not readable_file(f):
                     continue
 
-                fpath = os.path.join(root, f)
-                self.add_file_to_db(os.path.join(root, f))
+                # Data added to knowledge
+                if self.add_file_to_db(os.path.join(root, f)):
+                    nb_files += 1
+        if nb_files == 0:
+            msg_system("Warning: No files were found in", dirpath, "the knowledge is empty")
 
-    # TODO    Get the size of the file, then display a progress bar
-    #    based on the number of chunks x chunk_size (will not be correct but still)
     def add_file_to_db(self, fpath, max_chunks_process=20):
         dbkey = os.path.relpath(fpath, self.data_dir)
         file_hash = compute_file_hash(fpath)
 
-        if (dbkey in self.database) and (self.database[dbkey]["file_hash"] == file_hash):
-            return
+        # If we have a double in the documents
+        if (dbkey in self.knowledge) and (self.knowledge[dbkey]["file_hash"] == file_hash):
+            return False
 
-        self.database[dbkey] = {
+        self.knowledge[dbkey] = {
             "file_hash": file_hash,
             "vectors": list(),
             "index": list(),
         }
 
-        cache_file = os.path.join(self.db_dir, "cache", file_hash + ".gz")
+        # Attempt to read the cache data for this file
+        cache_file = os.path.join(self.cache_dir, file_hash + ".gz")
         if os.path.isfile(cache_file):
             cache_data = load_data(cache_file)
-            if "database" in cache_data.keys():
-                cache_data["vectors"] = cache_data["database"]
-                del cache_data["database"]
-                save_data(cache_data, cache_file)
 
             if cache_data["file_hash"] == file_hash:
                 cache_fname = os.path.relpath(cache_file, self.cache_dir)
-                print(f" - Loading file {fpath} from cache file {cache_fname}")
+                msg_system(f" - Loading file {dbkey} from cache file {cache_fname}")
                 for (n, chunk) in enumerate(cache_data["vectors"]):
-                    self.database[dbkey]["vectors"].append(chunk)
-                    self.database[dbkey]["index"].append(cache_data["index"][n])
-                return
+                    self.knowledge[dbkey]["vectors"].append(chunk)
+                    self.knowledge[dbkey]["index"].append(cache_data["index"][n])
+                return True
+
+        # If cache file doesn't exist, and we don't want to process the file now
+        elif self.do_not_build:
+            return False
 
         cache_data = {
             "file_hash": file_hash,
             "vectors": list(),
             "index": list(),
-            "path": fpath,
+            "path": dbkey,
         }
 
-        print(f" - Processing file {fpath}")
-        file_stats = os.stat(fpath)
-        tstart = time.time()
-        nbytes_done = 0
+        msg_system(f" - Processing file {dbkey}")
         chunks = list()
         refs = list()
-        generator = read_text_chunks_from(fpath, self.chunk_size)
+        generator = read_text_chunks_from(fpath, CHUNK_SIZE)
         while True:
             try:
                 (ref, chunk) = next(generator)
@@ -110,32 +116,26 @@ class KnowledgeLibrary:
             chunks.append(chunk.lower())
             if len(chunks) >= max_chunks_process:
                 for (n, data) in enumerate(self.embed4all.embed(chunks)):
-                    self.database[dbkey]["vectors"].append(data)
+                    self.knowledge[dbkey]["vectors"].append(data)
                     cache_data["vectors"].append(data)
-                    self.database[dbkey]["index"].append(refs[n])
+
+                    self.knowledge[dbkey]["index"].append(refs[n])
                     cache_data["index"].append(ref)
-                nbytes_done += sum([len(c) for c in chunks])
-                bps = nbytes_done / (time.time() - tstart)
-                done = nbytes_done / file_stats.st_size
-                # TODO    Display a progress bar instead
-                print("{} bytes/second\t {}% done".format(
-                    bps,
-                    round(done * 100, 2),
-                ))
                 chunks = list()
                 refs = list()
 
         save_data(cache_data, cache_file)
+        return True
 
     def query_db(self, query, nmax=10, threshold=0.9):
-        if len(self.database) == 0:
+        if len(self.knowledge) == 0:
             return []
 
-        db_keys = sorted(self.database.keys())
+        db_keys = sorted(self.knowledge.keys())
         all_vectors = []
         all_indexes = []
         for key in db_keys:
-            for (n, vec) in enumerate(self.database[key]["vectors"]):
+            for (n, vec) in enumerate(self.knowledge[key]["vectors"]):
                 all_vectors.append(vec)
                 all_indexes.append((key, n))
 
@@ -147,10 +147,8 @@ class KnowledgeLibrary:
         ], key = lambda x: x[1])
 
         bestmatch = [n for (n, _) in distances[:nmax]]
-        print(bestmatch)
 
         fnames = [all_indexes[i] for i in bestmatch]
-        print(", ".join([f"{f}:{l}" for (f, l) in fnames]))
 
         toget = dict()
         for (f, n) in fnames:
@@ -162,35 +160,8 @@ class KnowledgeLibrary:
         chunks = list()
         for (relf, nlist) in toget.items():
             f = os.path.join(self.data_dir, f)
-            for (nc, chunk) in enumerate(read_text_chunks_from(f, self.chunk_size)):
+            for (nc, chunk) in enumerate(read_text_chunks_from(f, CHUNK_SIZE)):
                 if nc in nlist:
                     chunks.append(chunk)
 
         return chunks
-
-# TODO    Have one script for updating the rag dataset
-#         And another one to query it
-def main():
-    import multiprocessing as mproc
-    library = KnowledgeLibrary(
-        ".rag",
-        ".rag/data",
-        ".model",
-        njobs=mproc.cpu_count(),
-        fpath_filter="",
-    )
-
-    # print("Question 1:")
-    # got = library.query_db("Explain me the different AI algorithms that can be used for natural language processing (NLP)")
-    # for chunk in got:
-    #     print(chunk)
-    # input("")
-
-    print("Question Cryptography:")
-    got = library.query_db("Tell me about the RSA algorithm, how it works, and its advantages")
-    for chunk in got:
-        print(chunk)
-    input("")
-
-if __name__ == "__main__":
-    main()

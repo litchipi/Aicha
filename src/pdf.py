@@ -4,8 +4,6 @@ from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
-from pdfminer.high_level import extract_pages
-from pdfminer.layout import LTTextLine
 from io import StringIO
 
 def load_pdf_file(f, sz):

@@ -3,6 +3,8 @@ VERBOSITY=0
 
 def set_verbosity(level):
     global VERBOSITY
+    if not level:
+        level = 0
     VERBOSITY = level
 
 def disp_color(r, g, b, *msg, **kwargs):

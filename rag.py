@@ -27,7 +27,11 @@ def save_data(data, fpath):
 
 def load_data(fpath):
     with gzip.open(fpath, "rb") as f:
-        return pickle.load(file)
+        return pickle.load(f)
+
+def ensure_path_exist(d):
+    if (not os.path.isdir(d)) and (not os.path.islink(d)):
+        os.makedirs(d)
 
 def compute_file_hash(fpath):
     with open(fpath, "rb") as f:
@@ -64,8 +68,20 @@ def load_pdf_file(f, sz):
     with open(f, "rb") as in_file:
         parser = PDFParser(in_file)
         doc = PDFDocument(parser)
-        for page in PDFPage.create_pages(doc):
-            interpreter.process_page(page)
+        pages = PDFPage.create_pages(doc)
+        while True:
+            try:
+                page = next(pages)
+            except:
+                print("Failed to load page from PDF: skipping the document")
+                break
+
+            try:
+                interpreter.process_page(page)
+            except:
+                print("Failed to process page: skipping the page")
+                continue
+
 
             text = output_string.getvalue().replace("   ", " ").replace("  ", " ").strip()
             output_string.truncate(0)
@@ -89,7 +105,7 @@ def load_pdf_file(f, sz):
                 yield (f"page {npage}", got)
                 npage += 1
                 text = " ".join(texts).strip()
-        yield " ".join(texts).strip()
+        yield (f"page {npage}", " ".join(texts).strip())
 
 # File handlers, should sanitize their output as well
 # TODO    Handle for "epub"
@@ -110,11 +126,12 @@ class KnowledgeLibrary:
         self.db_dir = os.path.abspath(db_dir)
         self.cache_dir = os.path.join(self.db_dir, "cache")
         self.data_dir = dirpath
-        os.makedirs(self.db_dir, exist_ok=True)
-        os.makedirs(self.cache_dir, exist_ok=True)
-        os.makedirs(model_dir, exist_ok=True)
+        ensure_path_exist(self.db_dir)
+        ensure_path_exist(self.cache_dir)
+        ensure_path_exist(model_dir)
 
         self.embed4all = Embed4All(
+            # device="nvidia",
             model_name="nomic-embed-text-v1.5.f16.gguf",
             model_path=model_dir,
             n_threads=njobs,
@@ -147,7 +164,7 @@ class KnowledgeLibrary:
 
     # TODO    Get the size of the file, then display a progress bar
     #    based on the number of chunks x chunk_size (will not be correct but still)
-    def add_file_to_db(self, fpath, max_chunks_process=40):
+    def add_file_to_db(self, fpath, max_chunks_process=20):
         dbkey = os.path.relpath(fpath, self.data_dir)
         file_hash = compute_file_hash(fpath)
 
@@ -184,6 +201,9 @@ class KnowledgeLibrary:
         }
 
         print(f" - Processing file {fpath}")
+        file_stats = os.stat(fpath)
+        tstart = time.time()
+        nbytes_done = 0
         chunks = list()
         refs = list()
         generator = FILETYPE_HANDLERS[fpath.split(".")[-1]](fpath, self.chunk_size)
@@ -199,17 +219,18 @@ class KnowledgeLibrary:
             refs.append(ref)
             chunks.append(chunk.lower())
             if len(chunks) >= max_chunks_process:
-                tstart = time.time()
                 for (n, data) in enumerate(self.embed4all.embed(chunks)):
                     self.database[dbkey]["vectors"].append(data)
                     cache_data["vectors"].append(data)
                     self.database[dbkey]["index"].append(refs[n])
                     cache_data["index"].append(ref)
-                dur = time.time() - tstart
-                print("{} sec/chunk\t {} bytes/second\t {} seconds in total".format(
-                    round(dur / len(chunks), 3),
-                    round(sum([len(c) for c in chunks]) / dur),
-                    dur,
+                nbytes_done += sum([len(c) for c in chunks])
+                bps = nbytes_done / (time.time() - tstart)
+                done = nbytes_done / file_stats.st_size
+                # TODO    Display a progress bar instead
+                print("{} bytes/second\t {}% done".format(
+                    bps,
+                    round(done * 100, 2),
                 ))
                 chunks = list()
                 refs = list()
@@ -258,7 +279,14 @@ class KnowledgeLibrary:
         return chunks
 
 if __name__ == "__main__":
-    library = KnowledgeLibrary(".rag", ".rag/data", ".model", njobs=16, fpath_filter="cryptography")
+    import multiprocessing as mproc
+    library = KnowledgeLibrary(
+        ".rag",
+        ".rag/data",
+        ".model",
+        njobs=mproc.cpu_count(),
+        fpath_filter="",
+    )
 
     # print("Question 1:")
     # got = library.query_db("Explain me the different AI algorithms that can be used for natural language processing (NLP)")

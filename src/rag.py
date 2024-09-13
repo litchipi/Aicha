@@ -20,8 +20,6 @@ class KnowledgeLibrary:
          ):
 
         self.fpath_filter = fpath_filter.lower()
-        self.knowledge = dict()
-        self.do_not_build=do_not_build
 
         self.cache_dir = os.path.abspath(cache_dir)
         self.data_dir = dirpath
@@ -36,7 +34,8 @@ class KnowledgeLibrary:
         )
 
         msg_system(f"[*] Building knowledge from directory {dirpath}")
-        self.build_db(dirpath)
+        if not do_not_build:
+            self.analyse_data_directory(dirpath)
 
     def compute_dirpath_hash(self, dirpath):
         hasher = hashlib.sha256()
@@ -45,35 +44,29 @@ class KnowledgeLibrary:
                 hasher.update(os.path.relpath(self.data_dir, os.path.join(root, f)).encode())
         return hasher.digest().hex()
 
-    def build_db(self, dirpath):
+    def file_pass_filter(self, fpath):
+        ok = self.fpath_filter in f.lower()
+        ok = ok and readable_file(f)
+        return ok
+
+    def analyse_data_directory(self, dirpath):
         nb_files = 0
+
         for (root, _, files) in os.walk(dirpath):
             for f in files:
-                if self.fpath_filter not in f.lower():
+                fpath = os.path.join(root, f)
+                if not self.file_pass_filter(fpath):
                     continue
 
-                if not readable_file(f):
-                    continue
-
-                # Data added to knowledge
-                if self.add_file_to_db(os.path.join(root, f)):
+                if self.analyse_file_to_cache(fpath):
                     nb_files += 1
-        if nb_files == 0:
-            msg_system("Warning: No files were found in", dirpath, "the knowledge is empty")
 
-    def add_file_to_db(self, fpath, max_chunks_process=20):
+        if nb_files == 0:
+            msg_debug("No files were found in", dirpath, "no knowledge is loaded")
+
+    def analyse_file_to_cache(self, fpath, max_chunks_process=20):
         dbkey = os.path.relpath(fpath, self.data_dir)
         file_hash = compute_file_hash(fpath)
-
-        # If we have a double in the documents
-        if (dbkey in self.knowledge) and (self.knowledge[dbkey]["file_hash"] == file_hash):
-            return False
-
-        self.knowledge[dbkey] = {
-            "file_hash": file_hash,
-            "vectors": list(),
-            "index": list(),
-        }
 
         # Attempt to read the cache data for this file
         cache_file = os.path.join(self.cache_dir, file_hash + ".gz")
@@ -81,16 +74,7 @@ class KnowledgeLibrary:
             cache_data = load_data(cache_file)
 
             if cache_data["file_hash"] == file_hash:
-                cache_fname = os.path.relpath(cache_file, self.cache_dir)
-                msg_system(f" - Loading file {dbkey} from cache file {cache_fname}")
-                for (n, chunk) in enumerate(cache_data["vectors"]):
-                    self.knowledge[dbkey]["vectors"].append(chunk)
-                    self.knowledge[dbkey]["index"].append(cache_data["index"][n])
                 return True
-
-        # If cache file doesn't exist, and we don't want to process the file now
-        elif self.do_not_build:
-            return False
 
         cache_data = {
             "file_hash": file_hash,
@@ -104,7 +88,10 @@ class KnowledgeLibrary:
         refs = list()
         generator = read_text_chunks_from(fpath, CHUNK_SIZE)
         while True:
-            (ref, chunk) = next(generator)
+            try:
+                (ref, chunk) = next(generator)
+            except StopIteration:
+                break
 
             if len(chunk) == 0:
                 continue
@@ -113,10 +100,7 @@ class KnowledgeLibrary:
             chunks.append(chunk.lower())
             if len(chunks) >= max_chunks_process:
                 for (n, data) in enumerate(self.embed4all.embed(chunks)):
-                    self.knowledge[dbkey]["vectors"].append(data)
                     cache_data["vectors"].append(data)
-
-                    self.knowledge[dbkey]["index"].append(refs[n])
                     cache_data["index"].append(ref)
                 chunks = list()
                 refs = list()
@@ -125,40 +109,41 @@ class KnowledgeLibrary:
         return True
 
     def query_db(self, query, nmax=10, threshold=0.9):
-        if len(self.knowledge) == 0:
+        query_vector = self.embed4all.embed(query)
+
+        matches = list()
+        for (root, _, files) in os.walk(self.cache_dir):
+            for f in files:
+                if not self.file_pass_filter(f):
+                    continue
+
+                cache_data = load_data(f)
+                fpath = os.path.join(self.data_dir, cache_data["path"])
+                if not os.path.isfile(fpath):
+                    msg_debug(f"File {fpath} not found anymore in knowledge base")
+                    continue
+
+                for (n, dist) in enumerate(euclidean_distances(query_vector, cache_data["vectors"])):
+                    if dist < threshold:
+                        matches.append((fpath, cache_data["index"][n], n, dist))
+
+        if len(matches) == 0:
+            msg_debug("No files matched the query, returning empty results")
             return []
 
-        db_keys = sorted(self.knowledge.keys())
-        all_vectors = []
-        all_indexes = []
-        for key in db_keys:
-            for (n, vec) in enumerate(self.knowledge[key]["vectors"]):
-                all_vectors.append(vec)
-                all_indexes.append((key, n))
-
-        query_vector = self.embed4all.embed(query)
-        distances = sorted([
-            (n, dist)
-            for (n, dist) in enumerate(euclidean_distances(query_vector, all_vectors)[0])
-            if (dist < threshold)
-        ], key = lambda x: x[1])
-
-        bestmatch = [n for (n, _) in distances[:nmax]]
-
-        fnames = [all_indexes[i] for i in bestmatch]
+        msg_debug("{} files matched the query".format(len(bestmatch)))
+        bestmatch = sorted(matches, key=lambda x: x[3])[:nmax]
 
         toget = dict()
-        for (f, n) in fnames:
-            if f in toget:
-                toget[f].append(n)
+        for (path, _, n, _) in bestmatch:
+            if path not in toget:
+                toget[path] = [ n ]
             else:
-                toget[f] = [ n ]
+                toget[path].append(n)
 
         chunks = list()
-        for (relf, nlist) in toget.items():
-            f = os.path.join(self.data_dir, f)
-            for (nc, chunk) in enumerate(read_text_chunks_from(f, CHUNK_SIZE)):
+        for (fpath, nlist) in toget.items():
+            for (nc, chunk) in enumerate(read_text_chunks_from(fpath, CHUNK_SIZE)):
                 if nc in nlist:
-                    chunks.append(chunk)
-
-        return chunks
+                    yield chunk
+        raise StopIteration

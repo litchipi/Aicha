@@ -4,6 +4,8 @@ import time
 import os
 from gpt4all import GPT4All
 
+from rag import KnowledgeLibrary
+
 SUPPORTED_MODELS = {
     "hermes": "Nous-Hermes-2-Mistral-7B-DPO.Q4_0.gguf",
     "llama": "Meta-Llama-3-8B-Instruct.Q4_0.gguf",
@@ -167,7 +169,8 @@ class Chat(GPT4All):
 #    - Use analysis of a folder as a DB for RAG
 #    - Insert content of database in prompt to generate answer
 
-if __name__ == "__main__":
+def main():
+    # TODO    Clean CLI argparse
     if len(sys.argv) < 4:
         print("Usage: aicha <model> <model_dir> <chat_dir>")
         sys.exit(1)
@@ -177,3 +180,6 @@ if __name__ == "__main__":
         chat_dir=os.path.abspath(sys.argv[3]),
     )
     bot.run()
+
+if __name__ == "__main__":
+    main()

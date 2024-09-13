@@ -20,11 +20,11 @@
     },
     "fork": {
       "locked": {
-        "lastModified": 1725871146,
-        "narHash": "sha256-sU8guubkQWWboxkSDmmd3vg0Yc5uFEzwSODmiBivdLw=",
+        "lastModified": 1726217314,
+        "narHash": "sha256-SuU9m2U3VWxOHnqfNVZ5wDyEEwJgSXs/tGXDbm9FfbE=",
         "owner": "litchipi",
         "repo": "nixpkgs",
-        "rev": "1ff6989d5c81d051a2196bb7dd46f729a75c985f",
+        "rev": "5d6bbe99511507db53aa1f7310d247ca8bd26a46",
         "type": "github"
       },
       "original": {

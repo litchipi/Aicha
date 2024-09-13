@@ -1,0 +1,15 @@
+[project]
+name = "aicha"
+version = "0.0.1"
+description = "Local-only LLM inference utility"
+
+dependencies = [
+  "gpt4all",
+  "numpy",
+  "scikit-learn",
+  "pdfminer-six",
+]
+
+[project.scripts]
+aicha = "aicha:main"
+rag = "rag:main"

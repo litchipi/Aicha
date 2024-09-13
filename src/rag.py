@@ -1,122 +1,13 @@
 import os
 import sys
-import gzip
 import json
 import time
-from sklearn.metrics.pairwise import euclidean_distances
 import numpy as np
-import hashlib
 from gpt4all import Embed4All
+from sklearn.metrics.pairwise import euclidean_distances
 
-from io import StringIO
-
-from pdfminer.converter import TextConverter
-from pdfminer.layout import LAParams
-from pdfminer.pdfdocument import PDFDocument
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
-from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfparser import PDFParser
-from pdfminer.high_level import extract_pages
-from pdfminer.layout import LTTextLine
-
-import pickle
-
-def save_data(data, fpath):
-    with gzip.open(fpath, "wb") as f:
-        pickle.dump(data, f)
-
-def load_data(fpath):
-    with gzip.open(fpath, "rb") as f:
-        return pickle.load(f)
-
-def ensure_path_exist(d):
-    if (not os.path.isdir(d)) and (not os.path.islink(d)):
-        os.makedirs(d)
-
-def compute_file_hash(fpath):
-    with open(fpath, "rb") as f:
-        hasher = hashlib.sha256()
-        while True:
-            data = f.read(1 << 22)
-            if len(data) == 0:
-                break
-
-            hasher.update(data)
-        return hasher.hexdigest()
-
-# TODO    Do not break in the middle of a word
-def load_text_file(f, sz):
-    nline = 1
-    with open(f, "r") as f:
-        while True:
-            data = f.read(sz)
-            if not data:
-                break
-            nline += data.count("\n")
-            yield (f"line {nline}", data)
-
-def load_pdf_file(f, sz):
-    texts = list()
-
-    output_string = StringIO()
-
-    rsrcmgr = PDFResourceManager()
-    device = TextConverter(rsrcmgr, output_string, laparams=LAParams())
-    interpreter = PDFPageInterpreter(rsrcmgr, device)
-
-    npage = 1
-    with open(f, "rb") as in_file:
-        parser = PDFParser(in_file)
-        doc = PDFDocument(parser)
-        pages = PDFPage.create_pages(doc)
-        while True:
-            try:
-                page = next(pages)
-            except Exception as err:
-                print(err)
-                breakpoint()
-                print("Failed to load page from PDF: skipping the document")
-                break
-
-            try:
-                interpreter.process_page(page)
-            except:
-                print("Failed to process page: skipping the page")
-                continue
-
-
-            text = output_string.getvalue().replace("   ", " ").replace("  ", " ").strip()
-            output_string.truncate(0)
-            output_string.seek(0)
-
-            if len(text) == 0:
-                continue
-
-            texts.append(text)
-
-            text = " ".join(texts).strip()
-            while len(text) > sz:
-                last_space = text[:sz].rfind(" ")
-                got = text[:last_space].strip()
-                rest = text[last_space:].strip()
-
-                texts = []
-                if len(rest) > 0:
-                    texts.append(rest)
-
-                yield (f"page {npage}", got)
-                npage += 1
-                text = " ".join(texts).strip()
-        yield (f"page {npage}", " ".join(texts).strip())
-
-# File handlers, should sanitize their output as well
-# TODO    Handle for "epub"
-FILETYPE_HANDLERS = {
-    "txt": load_text_file,
-    "md": load_text_file,
-    "xml": load_text_file,
-    "pdf": load_pdf_file,
-}
+from data import save_data, load_data, ensure_path_exist, compute_file_hash
+from handlers import read_text_chunks_from
 
 class KnowledgeLibrary:
     # TODO    Kwargs from argparse
@@ -155,14 +46,11 @@ class KnowledgeLibrary:
                 if self.fpath_filter not in f.lower():
                     continue
 
-                if not self.readable_file(f):
+                if not readable_file(f):
                     continue
 
                 fpath = os.path.join(root, f)
                 self.add_file_to_db(os.path.join(root, f))
-
-    def readable_file(self, fpath):
-        return ("." in fpath) and (fpath.split(".")[-1] in FILETYPE_HANDLERS.keys())
 
     # TODO    Get the size of the file, then display a progress bar
     #    based on the number of chunks x chunk_size (will not be correct but still)
@@ -208,7 +96,7 @@ class KnowledgeLibrary:
         nbytes_done = 0
         chunks = list()
         refs = list()
-        generator = FILETYPE_HANDLERS[fpath.split(".")[-1]](fpath, self.chunk_size)
+        generator = read_text_chunks_from(fpath, self.chunk_size)
         while True:
             try:
                 (ref, chunk) = next(generator)
@@ -274,13 +162,15 @@ class KnowledgeLibrary:
         chunks = list()
         for (relf, nlist) in toget.items():
             f = os.path.join(self.data_dir, f)
-            for (nc, chunk) in enumerate(FILETYPE_HANDLERS[f.split(".")[-1]](f, self.chunk_size)):
+            for (nc, chunk) in enumerate(read_text_chunks_from(f, self.chunk_size)):
                 if nc in nlist:
                     chunks.append(chunk)
 
         return chunks
 
-if __name__ == "__main__":
+# TODO    Have one script for updating the rag dataset
+#         And another one to query it
+def main():
     import multiprocessing as mproc
     library = KnowledgeLibrary(
         ".rag",
@@ -301,3 +191,6 @@ if __name__ == "__main__":
     for chunk in got:
         print(chunk)
     input("")
+
+if __name__ == "__main__":
+    main()

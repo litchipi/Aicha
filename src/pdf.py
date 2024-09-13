@@ -25,10 +25,11 @@ def load_pdf_file(f, sz):
         while True:
             try:
                 page = next(pages)
+            except StopIteration:
+                break
             except Exception as err:
-                print(err)
-                breakpoint()
                 print("Failed to load page from PDF: skipping the document")
+                print("Error", err)
                 break
 
             try:

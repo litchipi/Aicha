@@ -72,7 +72,9 @@ def load_pdf_file(f, sz):
         while True:
             try:
                 page = next(pages)
-            except:
+            except Exception as err:
+                print(err)
+                breakpoint()
                 print("Failed to load page from PDF: skipping the document")
                 break
 

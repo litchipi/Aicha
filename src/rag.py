@@ -5,7 +5,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 
 from filesystem import save_data, load_data, ensure_path_exist, compute_file_hash
 from handlers import read_text_chunks_from, readable_file
-from interface import msg_system
+from interface import msg_system, msg_debug
 
 CHUNK_SIZE=512
 
@@ -45,8 +45,8 @@ class KnowledgeLibrary:
         return hasher.digest().hex()
 
     def file_pass_filter(self, fpath):
-        ok = self.fpath_filter in f.lower()
-        ok = ok and readable_file(f)
+        ok = self.fpath_filter in fpath.lower()
+        ok = ok and readable_file(fpath)
         return ok
 
     def analyse_data_directory(self, dirpath):
@@ -131,7 +131,7 @@ class KnowledgeLibrary:
             msg_debug("No files matched the query, returning empty results")
             return []
 
-        msg_debug("{} files matched the query".format(len(bestmatch)))
+        msg_debug("{} files matched the query".format(len(matches)))
         bestmatch = sorted(matches, key=lambda x: x[3])[:nmax]
 
         toget = dict()
@@ -141,7 +141,6 @@ class KnowledgeLibrary:
             else:
                 toget[path].append(n)
 
-        chunks = list()
         for (fpath, nlist) in toget.items():
             for (nc, chunk) in enumerate(read_text_chunks_from(fpath, CHUNK_SIZE)):
                 if nc in nlist:

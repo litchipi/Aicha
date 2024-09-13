@@ -1,10 +1,13 @@
-from pdfminer.converter import TextConverter
+import sys
+from io import StringIO
 from pdfminer.layout import LAParams
-from pdfminer.pdfdocument import PDFDocument
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
-from io import StringIO
+from pdfminer.converter import TextConverter
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+
+from interface import msg_system
 
 def load_pdf_file(f, sz):
     texts = list()

@@ -25,6 +25,9 @@ def load_pdf_file(f, sz):
                 page = next(pages)
             except StopIteration:
                 break
+            except KeyboardInterrupt:
+                msg_system("Stopping PDF reading & extraction process")
+                sys.exit(0)
             except Exception as err:
                 print("Failed to load page from PDF: skipping the document")
                 print("Error", err)

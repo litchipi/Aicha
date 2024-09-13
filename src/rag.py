@@ -104,10 +104,7 @@ class KnowledgeLibrary:
         refs = list()
         generator = read_text_chunks_from(fpath, CHUNK_SIZE)
         while True:
-            try:
-                (ref, chunk) = next(generator)
-            except StopIteration:
-                break
+            (ref, chunk) = next(generator)
 
             if len(chunk) == 0:
                 continue
